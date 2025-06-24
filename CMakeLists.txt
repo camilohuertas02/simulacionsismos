@@ -11,13 +11,10 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 # Add executable
 add_executable(seismic_sim src/main.cpp)
 
-# Add include directories
-# This line would be useful if you have header files in src/ that main.cpp includes,
-# or if you add other .cpp files in src/ that need to find headers in src/.
-# For a single main.cpp that might include headers from a subfolder like src/include,
-# you might use: target_include_directories(seismic_sim PUBLIC ${PROJECT_SOURCE_DIR}/src/include)
-# For now, assuming main.cpp is self-contained or includes are relative to src/ or standard libraries.
-target_include_directories(seismic_sim PUBLIC ${PROJECT_SOURCE_DIR}/src)
+# Add include directories - FORMA CORREGIDA Y ROBUSTA
+target_include_directories(seismic_sim PUBLIC "include")
+target_include_directories(seismic_sim PUBLIC "src")
+
 
 # Add link libraries (if any)
 # target_link_libraries(seismic_sim PRIVATE some_library)

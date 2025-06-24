@@ -10,185 +10,124 @@ import re
 # --- Configuration ---
 DATA_DIR = "data"
 OUTPUT_GIF = "simulation_output.gif"
-FPS = 10 # Frames per second for the GIF
+FPS = 20 # Puedes ajustar esto como prefieras
 
 def get_simulation_time_from_filename(filename, dt, output_data_steps):
-    """
-    Extracts frame number from filename and calculates simulation time.
-    Assumes filename format like 'frame_XXXX.dat'.
-    """
     match = re.search(r"frame_(\d+)\.dat", os.path.basename(filename))
     if match:
         frame_num = int(match.group(1))
-        # Time = frame_index * (dt * output_data_steps)
-        # This assumes frame 0 is t=0, frame 1 is t=output_data_steps*dt, etc.
         return frame_num * dt * output_data_steps
     return None
 
-def find_global_z_min_max(data_files):
-    """
-    Finds the global minimum and maximum z-values across all data files
-    to ensure consistent Z-axis scaling in the animation.
-    """
-    global_min_z = float('inf')
-    global_max_z = float('-inf')
-
-    if not data_files:
-        return 0, 0 # Default if no files
-
+def find_global_z_range_with_percentiles(data_files, low_perc=1, high_perc=99):
+    all_heights = []
+    print("Reading all data files to calculate value ranges...")
     for file_path in data_files:
         try:
-            # Read data: x, y, height
-            # CORRECTED: Replaced delim_whitespace=True with sep=r'\s+'
             df = pd.read_csv(file_path, sep=r'\s+', header=None, names=['x', 'y', 'height'])
             if not df.empty:
-                global_min_z = min(global_min_z, df['height'].min())
-                global_max_z = max(global_max_z, df['height'].max())
-        except pd.errors.EmptyDataError:
-            print(f"Warning: Data file {file_path} is empty. Skipping for z-range calculation.")
+                all_heights.extend(df['height'].tolist())
         except Exception as e:
-            print(f"Error reading or processing {file_path} for z-range: {e}")
+            print(f"Warning: Could not process {file_path}: {e}")
             continue
 
-    if global_min_z == float('inf') or global_max_z == float('-inf'): # handles case where all files were empty
-        return -1, 1 # Default range if no valid data found
-    return global_min_z, global_max_z
+    if not all_heights:
+        return -1, 1, -1, 1
 
+    all_heights_series = pd.Series(all_heights)
+    
+    # Rango para la escala de colores Y para el eje Z (basado en percentiles)
+    vmin = all_heights_series.quantile(low_perc / 100.0)
+    vmax = all_heights_series.quantile(high_perc / 100.0)
+    
+    # Asegurarse de que el rango no sea cero
+    if vmin == vmax:
+        vmin -= 0.5
+        vmax += 0.5
 
-def create_frame(data_file_path, frame_num, total_frames, sim_time, z_min, z_max):
-    """
-    Generates a single frame for the animation.
-    - data_file_path: Path to the .dat file for this frame.
-    - frame_num: Current frame number (for progress).
-    - total_frames: Total number of frames (for progress).
-    - sim_time: Simulation time for this frame.
-    - z_min, z_max: Global min/max for Z-axis scaling.
-    """
+    print(f"Using percentile range for Z-Axis and Color Scale ({low_perc}th-{high_perc}th): [{vmin:.4f}, {vmax:.4f}]")
+    
+    return vmin, vmax
+
+def create_frame(data_file_path, frame_num, total_frames, sim_time, z_lim_min, z_lim_max, v_min, v_max):
     print(f"Processing frame {frame_num + 1}/{total_frames} (Time: {sim_time:.2f}s) from {data_file_path}")
-
     try:
-        # Read data: x, y, height
-        # CORRECTED: Replaced delim_whitespace=True with sep=r'\s+'
         df = pd.read_csv(data_file_path, sep=r'\s+', header=None, names=['x', 'y', 'height'])
         if df.empty:
-            print(f"Warning: Data file {data_file_path} is empty. Skipping frame.")
-            return None # Skip if no data
-
-        # Create a 2D grid for plotting
+            return None
         grid_z = df.pivot_table(index='y', columns='x', values='height').values
-
-        # Create X, Y coordinate matrices
         x_coords = np.arange(grid_z.shape[1])
         y_coords = np.arange(grid_z.shape[0])
         X, Y = np.meshgrid(x_coords, y_coords)
-
-    except pd.errors.EmptyDataError:
-        print(f"Error: The data file {data_file_path} is empty.")
-        return None
     except Exception as e:
         print(f"Error processing data from {data_file_path}: {e}")
         return None
 
-    # --- Plotting ---
     fig = plt.figure(figsize=(10, 8))
     ax = fig.add_subplot(111, projection='3d')
 
-    # Surface plot
-    surf = ax.plot_surface(X, Y, grid_z, cmap='viridis', edgecolor='none')
+    surf = ax.plot_surface(X, Y, grid_z, cmap='viridis', edgecolor='none', vmin=v_min, vmax=v_max)
 
-    # Set labels and title
     ax.set_xlabel("X coordinate")
     ax.set_ylabel("Y coordinate")
     ax.set_zlabel("Amplitude (Height)")
     ax.set_title(f"Seismic Wave Propagation - Time: {sim_time:.2f} s")
+    
+    # Usamos el mismo rango para los límites del eje Z
+    ax.set_zlim(z_lim_min, z_lim_max)
 
-    # Set consistent Z-axis limits
-    ax.set_zlim(z_min, z_max)
-
-    # Add a color bar which maps values to colors.
     fig.colorbar(surf, shrink=0.5, aspect=5, label="Amplitude")
-
-    # Save plot to a buffer
     fig.canvas.draw()
-    # CORRECTED: Replaced fig.canvas.tostring_rgb() with the modern equivalent
     rgba_buffer = fig.canvas.buffer_rgba()
-    image = np.asarray(rgba_buffer)[:, :, :3] # Convert to array and slice off alpha channel
-
-    plt.close(fig) # Close the figure to free memory
+    image = np.asarray(rgba_buffer)[:, :, :3]
+    plt.close(fig)
     return image
 
-
 def main():
-    """
-    Main function to generate the GIF.
-    """
     print("Starting visualization script...")
-
-    # 1. Check if data directory exists and has files
     if not os.path.isdir(DATA_DIR):
         print(f"Error: Data directory '{DATA_DIR}' not found.")
-        print("Please ensure the C++ simulation has been run and generated data.")
         return
-
     data_files = sorted(glob.glob(os.path.join(DATA_DIR, "frame_*.dat")))
-
     if not data_files:
-        print(f"Error: No data files (frame_*.dat) found in '{DATA_DIR}'.")
-        print("Execute first the C++ simulation to generate data.")
+        print(f"Error: No data files found in '{DATA_DIR}'.")
         return
 
     print(f"Found {len(data_files)} data files.")
-
-    # --- Read config.json to get dt and output_data_steps for accurate time display ---
-    dt_sim = 0.01 # Default, ideally read from config.json
-    output_steps_sim = 5 # Default, ideally read from config.json
+    dt_sim, output_steps_sim = 0.01, 5
     try:
         import json
         with open("config.json", 'r') as f:
             config_data = json.load(f)
             dt_sim = config_data.get("time_step_dt", dt_sim)
             output_steps_sim = config_data.get("output_data_steps", output_steps_sim)
-        print(f"Loaded dt={dt_sim}, output_data_steps={output_steps_sim} from config.json for time calculation.")
-    except FileNotFoundError:
-        print("Warning: config.json not found. Using default dt and output_data_steps for time calculation.")
+        print(f"Loaded dt={dt_sim}, output_data_steps={output_steps_sim} from config.json.")
     except Exception as e:
-        print(f"Warning: Could not read config.json ({e}). Using default dt and output_data_steps.")
+        print(f"Warning: Could not read config.json ({e}). Using default values.")
 
+    # Obtenemos el rango de percentiles
+    vmin, vmax = find_global_z_range_with_percentiles(data_files)
 
-    # 2. Determine global Z min/max for consistent scaling
-    print("Calculating global Z-axis range...")
-    z_min, z_max = find_global_z_min_max(data_files)
-    if z_min == z_max : # If all values are flat or only one file with one value
-        z_min -= 0.5
-        z_max += 0.5 # Add some padding if flat
-    print(f"Global Z-axis range: [{z_min:.2f}, {z_max:.2f}]")
-
-
-    # 3. Generate frames for GIF
     images = []
     total_files = len(data_files)
     for i, file_path in enumerate(data_files):
         sim_time = get_simulation_time_from_filename(file_path, dt_sim, output_steps_sim)
-        if sim_time is None: # Fallback if regex fails
-            sim_time = i * dt_sim * output_steps_sim # Approximate time
-            print(f"Warning: Could not parse frame number from {file_path}. Approximating time to {sim_time:.2f}s.")
-
-        frame_image = create_frame(file_path, i, total_files, sim_time, z_min, z_max)
+        if sim_time is None:
+            sim_time = i * dt_sim * output_steps_sim
+        
+        # --- CAMBIO IMPORTANTE AQUÍ ---
+        # Pasamos el mismo rango (vmin, vmax) a los límites del eje Y a los de los colores.
+        frame_image = create_frame(file_path, i, total_files, sim_time, vmin, vmax, vmin, vmax)
+        
         if frame_image is not None:
             images.append(frame_image)
 
-    # 4. Save GIF
     if images:
         print(f"Saving GIF to {OUTPUT_GIF} with {len(images)} frames at {FPS} FPS...")
-        try:
-            imageio.mimsave(OUTPUT_GIF, images, fps=FPS, loop=0) # loop=0 means infinite loop
-            print(f"GIF saved successfully: {OUTPUT_GIF}")
-        except Exception as e:
-            print(f"Error saving GIF: {e}")
-            print("You might need to install the imageio ffmpeg plugin: pip install imageio[ffmpeg]")
+        imageio.mimsave(OUTPUT_GIF, images, fps=FPS, loop=0)
+        print(f"GIF saved successfully: {OUTPUT_GIF}")
     else:
         print("No frames were generated. GIF not created.")
-
 
 if __name__ == "__main__":
     main()
