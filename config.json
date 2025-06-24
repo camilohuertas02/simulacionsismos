@@ -1,0 +1,10 @@
+{
+  "grid_size_x": 200,
+  "grid_size_y": 200,
+  "simulation_time": 5.0,
+  "time_step_dt": 0.01,
+  "output_data_steps": 5,
+  "source_pos_x": 100,
+  "source_pos_y": 100,
+  "ricker_frequency": 25.0
+}
