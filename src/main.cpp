@@ -172,8 +172,8 @@ int main() {
 
         // Update wave field using finite differences for the 2D wave equation:
         // u_next[i][j] = 2*u_curr[i][j] - u_prev[i][j] +
-        //                C_sq * dt_sq * ( (u_curr[i+1][j] - 2*u_curr[i][j] + u_curr[i-1][j])/dx_sq +
-        //                                 (u_curr[i][j+1] - 2*u_curr[i][j] + u_curr[i][j-1])/dy_sq )
+        //               C_sq * dt_sq * ( (u_curr[i+1][j] - 2*u_curr[i][j] + u_curr[i-1][j])/dx_sq +
+        //                                (u_curr[i][j+1] - 2*u_curr[i][j] + u_curr[i][j-1])/dy_sq )
         for (int i = 1; i < config.grid_size_x - 1; ++i) {
             for (int j = 1; j < config.grid_size_y - 1; ++j) {
                 double laplacian_x = (u_curr[i+1][j] - 2.0 * u_curr[i][j] + u_curr[i-1][j]) / dx_sq;
@@ -191,7 +191,7 @@ int main() {
         if (sx > 0 && sx < config.grid_size_x -1 && sy > 0 && sy < config.grid_size_y -1) {
              // Add source to u_next or u_curr? Adding to u_next is common for explicit schemes.
              // The scaling factor dt_sq is often applied to the source term in discretized wave equations.
-            u_next[sx][sy] += source_val * dt_sq; // dt_sq scaling for consistency with wave equation discretization
+             u_next[sx][sy] += source_val * dt_sq; // dt_sq scaling for consistency with wave equation discretization
         }
 
 
@@ -240,4 +240,3 @@ int main() {
 //   Or by directly including the single-header file `json.hpp` in the project.
 //   For this skeleton, I've provided a dummy implementation to make it runnable as a standalone file
 //   if one were to replace the dummy nlohmann::json with actual values.
-```

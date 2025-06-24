@@ -39,7 +39,8 @@ def find_global_z_min_max(data_files):
     for file_path in data_files:
         try:
             # Read data: x, y, height
-            df = pd.read_csv(file_path, delim_whitespace=True, header=None, names=['x', 'y', 'height'])
+            # CORRECTED: Replaced delim_whitespace=True with sep=r'\s+'
+            df = pd.read_csv(file_path, sep=r'\s+', header=None, names=['x', 'y', 'height'])
             if not df.empty:
                 global_min_z = min(global_min_z, df['height'].min())
                 global_max_z = max(global_max_z, df['height'].max())
@@ -67,25 +68,18 @@ def create_frame(data_file_path, frame_num, total_frames, sim_time, z_min, z_max
 
     try:
         # Read data: x, y, height
-        df = pd.read_csv(data_file_path, delim_whitespace=True, header=None, names=['x', 'y', 'height'])
+        # CORRECTED: Replaced delim_whitespace=True with sep=r'\s+'
+        df = pd.read_csv(data_file_path, sep=r'\s+', header=None, names=['x', 'y', 'height'])
         if df.empty:
             print(f"Warning: Data file {data_file_path} is empty. Skipping frame.")
             return None # Skip if no data
 
         # Create a 2D grid for plotting
-        # Determine grid dimensions (assuming they are consistent)
-        grid_x_max = df['x'].max()
-        grid_y_max = df['y'].max()
-
-        # Create pivot table for Z values (height)
-        # This might be slow for very large grids directly.
-        # Consider if the C++ output can be made more grid-like if performance is an issue.
-        # For now, pivot_table is convenient.
         grid_z = df.pivot_table(index='y', columns='x', values='height').values
 
         # Create X, Y coordinate matrices
-        x_coords = np.arange(grid_z.shape[1]) # df['x'].unique()
-        y_coords = np.arange(grid_z.shape[0]) # df['y'].unique()
+        x_coords = np.arange(grid_z.shape[1])
+        y_coords = np.arange(grid_z.shape[0])
         X, Y = np.meshgrid(x_coords, y_coords)
 
     except pd.errors.EmptyDataError:
@@ -116,8 +110,9 @@ def create_frame(data_file_path, frame_num, total_frames, sim_time, z_min, z_max
 
     # Save plot to a buffer
     fig.canvas.draw()
-    image = np.frombuffer(fig.canvas.tostring_rgb(), dtype='uint8')
-    image = image.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+    # CORRECTED: Replaced fig.canvas.tostring_rgb() with the modern equivalent
+    rgba_buffer = fig.canvas.buffer_rgba()
+    image = np.asarray(rgba_buffer)[:, :, :3] # Convert to array and slice off alpha channel
 
     plt.close(fig) # Close the figure to free memory
     return image
@@ -145,8 +140,6 @@ def main():
     print(f"Found {len(data_files)} data files.")
 
     # --- Read config.json to get dt and output_data_steps for accurate time display ---
-    # This is a simplified way to get these values.
-    # A more robust way would be to use a proper JSON parser.
     dt_sim = 0.01 # Default, ideally read from config.json
     output_steps_sim = 5 # Default, ideally read from config.json
     try:
@@ -198,15 +191,4 @@ def main():
 
 
 if __name__ == "__main__":
-    # // Entry point for the script
     main()
-
-# TODO:
-# - Consider more robust parsing of data files, especially if they can be very large.
-#   (e.g., iterative processing if memory becomes an issue)
-# - Add more customization options (e.g., colormap, viewing angle) via command-line arguments.
-# - The current method of reading dt and output_data_steps from config.json is basic.
-#   A shared configuration library or passing these values during C++ execution could be more robust.
-# - Ensure grid dimensions are correctly inferred or read if they can vary.
-#   The current script assumes x and y in the .dat files are 0-indexed and continuous.
-```
